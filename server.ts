@@ -38,7 +38,27 @@ app.set('trust proxy', 1);
 app.disable('x-powered-by');
 
 // ------------------------------------------------------------
-// 1. Defensive Perimeter Middleware
+// 1. Static Asset Serving (Served before CORS/Rate Limiters)
+// ------------------------------------------------------------
+
+const distPath = path.join(__dirname, 'dist');
+app.use(
+  express.static(distPath, {
+    etag: true,
+    maxAge: '1h',
+    setHeaders: (res, filePath) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      if (filePath.endsWith('.js')) {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      } else if (filePath.endsWith('.css')) {
+        res.setHeader('Content-Type', 'text/css; charset=utf-8');
+      }
+    },
+  })
+);
+
+// ------------------------------------------------------------
+// 2. Defensive Perimeter Middleware
 // ------------------------------------------------------------
 
 // A. Helmet with Customized Strict Content Security Policy
@@ -70,25 +90,35 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:3000',
   'http://localhost:3001',
+  'https://respiro-3-0.onrender.com',
   'https://airguard-ai.onrender.com',
   'https://airguard-ai.web.app',
   'https://airguard-ai.firebaseapp.com',
 ];
 
+if (process.env.ALLOWED_ORIGINS) {
+  ALLOWED_ORIGINS.push(...process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()));
+}
+
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true); // Dev curl/server-to-server
+      if (!origin) return callback(null, true); // Dev curl/server-to-server or same-origin
       if (
+        ALLOWED_ORIGINS.includes('*') ||
         ALLOWED_ORIGINS.includes(origin) ||
         origin.startsWith('http://localhost:') ||
-        (origin.includes('airguard') && origin.endsWith('.onrender.com'))
+        origin.startsWith('http://127.0.0.1:') ||
+        origin.endsWith('.onrender.com') ||
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('.web.app') ||
+        origin.endsWith('.firebaseapp.com')
       ) {
         return callback(null, true);
       }
-      return callback(new Error(`CORS policy violation: ${origin}`), false);
+      return callback(null, false);
     },
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type'],
     credentials: false,
   })
@@ -497,11 +527,8 @@ Return only JSON.
 });
 
 // ------------------------------------------------------------
-// 6. Production Static Asset Serving & Express 5 Catch-All
+// 6. Express 5 Catch-All SPA Fallback
 // ------------------------------------------------------------
-
-const distPath = path.join(__dirname, 'dist');
-app.use(express.static(distPath));
 
 // Express 5 named wildcard catch-all (*splat)
 app.get('*splat', (_req: Request, res: Response) => {

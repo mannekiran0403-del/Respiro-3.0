@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: airguard-ai
+    name: respiro-3-0
     env: node
     plan: free
     buildCommand: npm install --include=dev && npm run build
